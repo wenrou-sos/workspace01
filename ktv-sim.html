@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KTV 门店排队模拟系统</title>
+<style>
+:root{
+  --bg:#0e1320; --panel:#161d30; --panel2:#1c2540; --line:#2a3552;
+  --txt:#e8ecf5; --mut:#8b96b0; --acc:#5aa2ff;
+  --ok:#43d39e; --warn:#ffb020; --bad:#ff6b6b;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);
+  font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px}
+header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+header h1{font-size:18px;margin:0}
+header .sub{color:var(--mut);font-size:12px}
+main{display:grid;grid-template-columns:360px 1fr;gap:14px;padding:14px;align-items:start}
+@media(max-width:1000px){main{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px}
+.panel h2{font-size:14px;margin:0 0 10px;color:var(--acc);font-weight:600}
+.panel h3{font-size:13px;margin:14px 0 6px;color:var(--mut);font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{color:var(--mut);font-weight:500;text-align:left;padding:3px 4px;border-bottom:1px solid var(--line)}
+td{padding:3px 4px}
+input,select{background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+  border-radius:6px;padding:4px 6px;font-size:12px;width:100%}
+input[type=checkbox]{width:auto}
+input[type=time]{padding:3px 4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.field label{display:block;color:var(--mut);font-size:11px;margin-bottom:2px}
+.btn{background:var(--acc);color:#06122b;border:none;border-radius:8px;padding:8px 16px;
+  font-size:14px;font-weight:600;cursor:pointer}
+.btn.sec{background:var(--panel2);color:var(--txt);border:1px solid var(--line);font-weight:400}
+.btnrow{display:flex;gap:8px;margin:10px 0;flex-wrap:wrap}
+.iconbtn{background:none;border:none;color:var(--bad);cursor:pointer;font-size:14px;padding:0 4px}
+.addbtn{background:none;border:1px dashed var(--line);color:var(--mut);border-radius:6px;
+  padding:3px 10px;font-size:12px;cursor:pointer;margin-top:6px}
+#status{font-size:12px;color:var(--mut);margin-bottom:10px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-bottom:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.card .t{color:var(--mut);font-size:12px;margin-bottom:4px}
+.card .v{font-size:20px;font-weight:700}
+.card .s{font-size:11px;color:var(--mut);margin-top:3px;line-height:1.5}
+.dg{color:var(--ok)} .db{color:var(--bad)} .dl{color:var(--mut)}
+canvas{width:100%;display:block}
+.chartbox{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px}
+.chartbox h2{font-size:14px;margin:0 0 8px;color:var(--acc);font-weight:600}
+.interp{list-style:none;padding:0;margin:0}
+.interp li{padding:7px 10px;border-radius:8px;margin-bottom:6px;background:var(--panel2);font-size:13px;line-height:1.6}
+.interp li::before{content:"●";margin-right:8px}
+.interp li.ok::before{color:var(--ok)} .interp li.warn::before{color:var(--warn)}
+.interp li.bad::before{color:var(--bad)} .interp li.info::before{color:var(--acc)}
+.interp .proj{display:block;color:var(--mut);font-size:12px;margin-top:2px}
+details{color:var(--mut);font-size:12px} summary{cursor:pointer;color:var(--acc)}
+.legend{font-size:11px;color:var(--mut);margin-top:4px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎤 KTV 门店排队模拟系统</h1>
+  <span class="sub">离散事件模拟 · 前台/保洁/技师共享人力争用 · 参数修改自动重算 · 结果自动解读</span>
+</header>
+<main>
+  <!-- ============ 左侧：参数区 ============ -->
+  <div>
+    <div class="panel">
+      <h2>① 分时段到店量</h2>
+      <table>
+        <thead><tr><th>开始</th><th>结束</th><th>组/小时</th><th></th></tr></thead>
+        <tbody id="tblPeriods"></tbody>
+      </table>
+      <button class="addbtn" id="btnAddPeriod">+ 添加时段</button>
+    </div>
+
+    <div class="panel">
+      <h2>② 包厢配置</h2>
+      <table>
+        <thead><tr><th>房型</th><th>数量</th><th>需求%</th><th>时长±波动<br>(分钟)</th><th>保洁<br>分钟</th><th>客单价<br>元</th><th></th></tr></thead>
+        <tbody id="tblRooms"></tbody>
+      </table>
+      <button class="addbtn" id="btnAddRoom">+ 添加房型</button>
+    </div>
+
+    <div class="panel">
+      <h2>③ 岗位人数与服务参数</h2>
+      <div class="grid3">
+        <div class="field"><label>前台人数</label><input type="number" min="1" data-bind="staff.front"></div>
+        <div class="field"><label>保洁人数</label><input type="number" min="1" data-bind="staff.clean"></div>
+        <div class="field"><label>设备技师</label><input type="number" min="0" data-bind="staff.tech"></div>
+      </div>
+      <h3>前台</h3>
+      <div class="grid2">
+        <div class="field"><label>入住办理 均值(分)</label><input type="number" step="0.5" data-bind="checkin"></div>
+        <div class="field"><label>波动(±)</label><input type="number" step="0.5" data-bind="checkinSd"></div>
+        <div class="field"><label>退房结账 均值(分)</label><input type="number" step="0.5" data-bind="checkout"></div>
+        <div class="field"><label>波动(±)</label><input type="number" step="0.5" data-bind="checkoutSd"></div>
+      </div>
+      <div class="grid2" style="margin-top:8px">
+        <div class="field"><label>退房也走前台(共享人力)</label><input type="checkbox" data-bind="checkoutAtFront"></div>
+        <div class="field"><label>前台排队规则</label>
+          <select data-bind="frontPolicy">
+            <option value="fifo">先到先服务</option>
+            <option value="outFirst">退房优先</option>
+          </select></div>
+      </div>
+      <h3>设备故障</h3>
+      <div class="grid3">
+        <div class="field"><label>故障率 %/场</label><input type="number" step="1" data-bind="failProb"></div>
+        <div class="field"><label>维修 均值(分)</label><input type="number" data-bind="repair"></div>
+        <div class="field"><label>波动(±)</label><input type="number" data-bind="repairSd"></div>
+      </div>
+      <h3>客人耐心（等房超时即流失）</h3>
+      <div class="grid2">
+        <div class="field"><label>最短(分)</label><input type="number" data-bind="patMin"></div>
+        <div class="field"><label>最长(分)</label><input type="number" data-bind="patMax"></div>
+      </div>
+      <h3>模拟设置</h3>
+      <div class="grid3">
+        <div class="field"><label>重复次数</label><input type="number" min="5" max="200" data-bind="reps"></div>
+        <div class="field"><label>随机种子</label><input type="number" data-bind="seed"></div>
+        <div class="field"><label>&nbsp;</label><button class="btn sec" id="btnSeed" style="width:100%">🎲 换种子</button></div>
+      </div>
+      <div class="btnrow">
+        <button class="btn" id="btnRun">▶ 运行模拟</button>
+        <button class="btn sec" id="btnReset">恢复默认</button>
+      </div>
+      <details>
+        <summary>模型假设说明</summary>
+        <ul>
+          <li>各时段内到店服从泊松过程（组/小时可不同），跨时段边界按无记忆性精确处理</li>
+          <li>服务/保洁/维修/消费时长服从截断正态分布（均值±波动）</li>
+          <li>前台同时办理入住与退房（可关），共享人力产生争用</li>
+          <li>保洁员在所有房型间共享；脏房先排队等保洁，干净房再分配给等房客人</li>
+          <li>每场消费期间按故障率随机触发设备故障，技师共享、按到达顺序维修</li>
+          <li>等房客人耐心均匀分布，超时流失并计入流失营收</li>
+          <li>结果 = N 次重复模拟（不同种子）的均值 ± 标准差，可理解为"N 个营业日"</li>
+        </ul>
+      </details>
+    </div>
+  </div>
+
+  <!-- ============ 右侧：结果区 ============ -->
+  <div>
+    <div id="status">正在计算…</div>
+    <div class="cards" id="cards"></div>
+    <div class="chartbox">
+      <h2>排队人数随时间变化（多次模拟均值）</h2>
+      <canvas id="cvQueue" height="220"></canvas>
+      <div class="legend" id="lgQueue"></div>
+    </div>
+    <div class="chartbox">
+      <h2>资源利用率 / 包厢占用率</h2>
+      <canvas id="cvUtil" height="200"></canvas>
+    </div>
+    <div class="panel">
+      <h2>📋 结果解读与建议</h2>
+      <ul class="interp" id="interp"></ul>
+    </div>
+  </div>
+</main>
+
+<script>
+'use strict';
+/* =====================================================================
+ * 一、随机数与分布
+ * =================================================================== */
+function RNG(seed){
+  let a = seed >>> 0;
+  const next = () => {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+  return {
+    next,
+    uni: (lo, hi) => lo + next() * (hi - lo),
+    exp: rate => -Math.log(1 - next()) / rate,
+    normal: (mu, sd) => {           // Box-Muller，截断到 >=0.3 分钟
+      const u1 = Math.max(1e-9, next()), u2 = next();
+      const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+      return Math.max(0.3, mu + sd * z);
+    }
+  };
+}
+
+/* =====================================================================
+ * 二、离散事件模拟内核
+ * 事件: ARR到店 CI入住办完 CO退房办完 END消费结束 BALK流失
+ *       CL保洁完 FAIL设备故障 REP维修完 SAMPLE采样
+ * 共享资源争用: 前台(入住+退房) / 保洁(全部房型) / 技师(全部包厢)
+ * =================================================================== */
+class Heap{
+  constructor(){ this.a = []; }
+  static cmp(x,y){ return x.t - y.t || x.s - y.s; }
+  push(x){
+    const a = this.a; a.push(x);
+    let i = a.length - 1;
+    while(i > 0){
+      const p = (i - 1) >> 1;
+      if(Heap.cmp(a[p], x) <= 0) break;
+      a[i] = a[p]; i = p;
+    }
+    a[i] = x;
+  }
+  pop(){
+    const a = this.a, top = a[0], last = a.pop();
+    if(a.length){
+      a[0] = last;
+      let i = 0;
+      for(;;){
+        let m = i; const l = 2*i+1, r = l+1;
+        if(l < a.length && Heap.cmp(a[l], a[m]) < 0) m = l;
+        if(r < a.length && Heap.cmp(a[r], a[m]) < 0) m = r;
+        if(m === i) break;
+        const tmp = a[i]; a[i] = a[m]; a[m] = tmp; i = m;
+      }
+    }
+    return top;
+  }
+  get size(){ return this.a.length; }
+}
+
+function pickType(P, rng){
+  let x = rng.next(), acc = 0;
+  for(let i = 0; i < P.types.length; i++){
+    acc += P.types[i].share;
+    if(x <= acc) return i;
+  }
+  return P.types.length - 1;
+}
+
+function simulate(P, seed){
+  const rng = RNG(seed);
+  const heap = new Heap();
+  let seq = 0;
+  const ev = (t, type, data) => heap.push({t, s: seq++, type, data});
+  const horizon = P.horizon, DRAIN = horizon + 240;
+
+  // --- 预生成全天到店事件：非齐次泊松过程，利用指数分布无记忆性跨时段 ---
+  {
+    let t = 0, guard = 0;
+    while(t < horizon && guard++ < 200000){
+      const seg = P.periods.find(sg => t >= sg.s && t < sg.e);
+      if(!seg){
+        const nxt = P.periods.filter(sg => sg.s > t).map(sg => sg.s);
+        if(!nxt.length) break;
+        t = Math.min(...nxt); continue;
+      }
+      t += rng.exp(seg.rate);          // rate: 组/分钟
+      if(t >= seg.e){ t = seg.e; continue; }   // 跨边界：从边界处用新速率继续
+      ev(t, 'ARR', {type: pickType(P, rng)});
+    }
+  }
+  for(let t = 0; t <= horizon + 120; t += 5) ev(t, 'SAMPLE');
+
+  // --- 状态 ---
+  const rooms = [];
+  P.types.forEach((tp, ti) => {
+    for(let i = 0; i < tp.count; i++) rooms.push({type: ti, state: 'clean', g: null});
+  });
+  let fB = 0, cB = 0, kB = 0;                 // 前台/保洁/技师 忙人数
+  const fq = [], wq = [], cq = [], tq = [];   // 前台/等房/待保洁/待维修 队列
+  const typeExists = P.types.map(tp => tp.count > 0);
+
+  const S = { arrived:0, served:0, lostBalk:0, lostNoType:0, lostRev:0,
+    failures:0, repaired:0, rmWaited:0,
+    fdW:[], rmW:[], clW:[], tkW:[],
+    fdBusy:0, clBusy:0, tkBusy:0, occ: P.types.map(() => 0),
+    maxFq:0, maxWq:0, maxCq:0, maxTq:0, series:[] };
+
+  let now = 0, lastT = 0;
+  function accum(t){                          // 忙时积分（只统计营业时段内）
+    const tt = Math.min(t, horizon), dt = tt - lastT;
+    if(dt > 0){
+      S.fdBusy += fB * dt; S.clBusy += cB * dt; S.tkBusy += kB * dt;
+      for(const r of rooms) if(r.state === 'occ') S.occ[r.type] += dt;
+      lastT = tt;
+    }
+  }
+  const activeWq = () => { let n = 0; for(const g of wq) if(g.state === 'wait') n++; return n; };
+
+  function tryFront(){
+    while(fB < P.staff.front && fq.length){
+      let idx = 0;
+      if(P.frontPolicy === 'outFirst'){
+        const j = fq.findIndex(x => x.kind === 'out');
+        if(j >= 0) idx = j;
+      }
+      const it = fq.splice(idx, 1)[0];
+      fB++;
+      S.fdW.push(now - it.t0);
+      const svc = it.kind === 'in'
+        ? rng.normal(P.checkin, P.checkinSd)
+        : rng.normal(P.checkout, P.checkoutSd);
+      ev(now + svc, it.kind === 'in' ? 'CI' : 'CO', it.g);
+    }
+  }
+  function tryRoom(g){
+    g.tRoom0 = now;
+    const r = rooms.find(r => r.state === 'clean' && r.type === g.type);
+    if(r){ occupy(r, g, false); return; }
+    g.state = 'wait'; wq.push(g);
+    S.maxWq = Math.max(S.maxWq, activeWq());
+    ev(now + rng.uni(P.patMin, P.patMax), 'BALK', g);   // 耐心耗尽即流失
+  }
+  function occupy(r, g, fromQueue){
+    r.state = 'occ'; r.g = g; g.state = 'sing';
+    if(fromQueue){ S.rmWaited++; S.rmW.push(now - g.tRoom0); }
+    const tp = P.types[g.type];
+    const dur = rng.normal(tp.dur, tp.durSd);
+    ev(now + dur, 'END', {r, g});
+    if(rng.next() < P.failProb) ev(now + rng.uni(0, dur), 'FAIL', {r, g});
+  }
+  function tryClean(){
+    while(cB < P.staff.clean && cq.length){
+      const it = cq.shift(); cB++;
+      S.clW.push(now - it.t0);
+      const tp = P.types[it.r.type];
+      ev(now + rng.normal(tp.clean, tp.clean * 0.2), 'CL', it.r);
+    }
+  }
+  function tryTech(){
+    while(kB < P.staff.tech && tq.length){
+      const it = tq.shift(); kB++;
+      S.tkW.push(now - it.t0);
+      ev(now + rng.normal(P.repair, P.repairSd), 'REP', it);
+    }
+  }
+
+  // --- 主循环 ---
+  while(heap.size){
+    const e = heap.pop();
+    if(e.t > DRAIN) break;
+    accum(e.t); now = e.t;
+    switch(e.type){
+      case 'ARR': {
+        const g = {type: e.data.type, state: 'new'};
+        S.arrived++;
+        if(!typeExists[g.type]){ S.lostNoType++; S.lostRev += P.types[g.type].price; break; }
+        fq.push({kind:'in', g, t0: now});
+        S.maxFq = Math.max(S.maxFq, fq.length);
+        tryFront(); break;
+      }
+      case 'CI': fB--; tryFront(); tryRoom(e.data); break;
+      case 'CO': fB--; tryFront(); break;
+      case 'END': {
+        const {r, g} = e.data;
+        if(r.g !== g) break;
+        r.g = null; r.state = 'dirty';
+        S.served++;
+        cq.push({r, t0: now});
+        S.maxCq = Math.max(S.maxCq, cq.length);
+        tryClean();
+        if(P.checkoutAtFront){
+          fq.push({kind:'out', g, t0: now});
+          S.maxFq = Math.max(S.maxFq, fq.length);
+          tryFront();
+        }
+        break;
+      }
+      case 'BALK': {
+        const g = e.data;
+        if(g.state === 'wait'){ g.state = 'gone'; S.lostBalk++; S.lostRev += P.types[g.type].price; }
+        break;
+      }
+      case 'CL': {
+        cB--; tryClean();
+        const r = e.data; r.state = 'clean';
+        let idx = -1;
+        for(let i = 0; i < wq.length; i++){
+          const g = wq[i];
+          if(g.state === 'wait' && g.type === r.type){ idx = i; break; }
+        }
+        if(idx >= 0){ const g = wq.splice(idx, 1)[0]; occupy(r, g, true); }
+        break;
+      }
+      case 'FAIL': {
+        const {r, g} = e.data;
+        if(r.g !== g || r.state !== 'occ') break;   // 场次已结束
+        S.failures++;
+        tq.push({r, t0: now});
+        S.maxTq = Math.max(S.maxTq, tq.length);
+        tryTech(); break;
+      }
+      case 'REP': kB--; S.repaired++; tryTech(); break;
+      case 'SAMPLE': {
+        const w = activeWq();
+        S.maxWq = Math.max(S.maxWq, w);
+        S.series.push({t: now, fq: fq.length, wq: w, cq: cq.length, tq: tq.length});
+        break;
+      }
+    }
+  }
+  accum(horizon);
+
+  const avg = a => a.length ? a.reduce((x,y) => x+y, 0) / a.length : 0;
+  const mx  = a => a.length ? Math.max(...a) : 0;
+  return {
+    arrived: S.arrived, served: S.served,
+    lost: S.lostBalk + S.lostNoType, lostRev: S.lostRev,
+    rmWaited: S.rmWaited,
+    fdWait: avg(S.fdW), fdWaitMax: mx(S.fdW),
+    rmWait: avg(S.rmW), rmWaitMax: mx(S.rmW),
+    clWait: avg(S.clW), clWaitMax: mx(S.clW),
+    tkWait: avg(S.tkW), tkWaitMax: mx(S.tkW),
+    failures: S.failures, repaired: S.repaired,
+    utilF: S.fdBusy / (P.staff.front * horizon),
+    utilC: S.clBusy / (P.staff.clean * horizon),
+    utilT: P.staff.tech ? S.tkBusy / (P.staff.tech * horizon) : 0,
+    occ: S.occ.map((o,i) => P.types[i].count ? o / (P.types[i].count * horizon) : 0),
+    maxFq: S.maxFq, maxWq: S.maxWq, maxCq: S.maxCq, maxTq: S.maxTq,
+    series: S.series
+  };
+}
+
+/* =====================================================================
+ * 三、多次重复 + 聚合
+ * =================================================================== */
+const mean = a => a.reduce((x,y) => x+y, 0) / a.length;
+const std  = a => { const m = mean(a); return Math.sqrt(mean(a.map(x => (x-m)*(x-m)))); };
+
+function runExperiments(P){
+  const rs = [];
+  for(let i = 0; i < P.reps; i++) rs.push(simulate(P, P.seed + i * 7919));
+  const keys = ['arrived','served','lost','lostRev','rmWaited',
+    'fdWait','fdWaitMax','rmWait','rmWaitMax','clWait','clWaitMax',
+    'tkWait','tkWaitMax','failures','repaired',
+    'utilF','utilC','utilT','maxFq','maxWq','maxCq','maxTq'];
+  const agg = {};
+  for(const k of keys){
+    const vs = rs.map(r => r[k]);
+    agg[k] = {mean: mean(vs), std: std(vs)};
+  }
+  agg.occ = P.types.map((_, i) => {
+    const vs = rs.map(r => r.occ[i]);
+    return {mean: mean(vs), std: std(vs)};
+  });
+  const n = rs[0].series.length;
+  agg.series = [];
+  for(let i = 0; i < n; i++){
+    agg.series.push({
+      t:  rs[0].series[i].t,
+      fq: mean(rs.map(r => r.series[i].fq)),
+      wq: mean(rs.map(r => r.series[i].wq)),
+      cq: mean(rs.map(r => r.series[i].cq)),
+      tq: mean(rs.map(r => r.series[i].tq))
+    });
+  }
+  return agg;
+}
+
+/* =====================================================================
+ * 四、参数：默认值、界面状态 → 模拟参数
+ * =================================================================== */
+const DEFAULTS = {
+  periods: [
+    {s:'12:00', e:'17:00', rate:3},
+    {s:'17:00', e:'20:00', rate:7},
+    {s:'20:00', e:'23:00', rate:10},
+    {s:'23:00', e:'02:00', rate:6},
+    {s:'02:00', e:'04:00', rate:2}
+  ],
+  rooms: [
+    {name:'小包', count:10, share:50, dur:120, durSd:25, clean:15, price:199},
+    {name:'中包', count:8,  share:35, dur:150, durSd:30, clean:20, price:299},
+    {name:'大包', count:4,  share:15, dur:180, durSd:35, clean:25, price:459}
+  ],
+  staff: {front:2, clean:3, tech:1},
+  checkin:3, checkinSd:1, checkout:2, checkoutSd:0.7,
+  checkoutAtFront:true, frontPolicy:'fifo',
+  failProb:8, repair:15, repairSd:5,
+  patMin:10, patMax:40,
+  reps:30, seed:42
+};
+const clone = o => JSON.parse(JSON.stringify(o));
+const defaultState = () => clone(DEFAULTS);
+
+const OPEN_MIN = 12 * 60;   // 12:00 开门
+function relMin(hhmm){
+  const [h, m] = hhmm.split(':').map(Number);
+  return ((h*60 + m) - OPEN_MIN + 1440) % 1440;
+}
+function fmtTime(m){
+  const total = OPEN_MIN + m;
+  const h = Math.floor(total / 60) % 24, mm = Math.floor(total % 60);
+  return String(h).padStart(2,'0') + ':' + String(mm).padStart(2,'0');
+}
+
+function toSimParams(st){
+  const periods = st.periods
+    .map(r => ({s: relMin(r.s), e: relMin(r.e), rate: Math.max(0, +r.rate || 0) / 60}))
+    .filter(p => p.e > p.s)
+    .sort((a,b) => a.s - b.s);
+  const horizon = periods.length ? Math.max(...periods.map(p => p.e)) : 0;
+  const types = st.rooms.filter(r => Math.round(+r.count) > 0).map(r => ({
+    name: r.name || '房型',
+    count: Math.max(0, Math.round(+r.count) || 0),
+    share: Math.max(0, +r.share || 0),
+    dur:  Math.max(10, +r.dur || 60),
+    durSd: Math.max(0, +r.durSd || 0),
+    clean: Math.max(1, +r.clean || 5),
+    price: Math.max(0, +r.price || 0)
+  }));
+  const shareSum = types.reduce((x,t) => x + t.share, 0) || 1;
+  types.forEach(t => t.share /= shareSum);
+  let patMin = Math.max(0, +st.patMin || 0), patMax = Math.max(1, +st.patMax || 30);
+  if(patMax < patMin) [patMin, patMax] = [patMax, patMin];
+  return {
+    periods, horizon, types,
+    staff: {
+      front: Math.max(1, Math.round(+st.staff.front) || 1),
+      clean: Math.max(1, Math.round(+st.staff.clean) || 1),
+      tech:  Math.max(0, Math.round(+st.staff.tech)  || 0)
+    },
+    checkin: Math.max(0.5, +st.checkin || 3), checkinSd: Math.max(0, +st.checkinSd || 0),
+    checkout: Math.max(0.5, +st.checkout || 2), checkoutSd: Math.max(0, +st.checkoutSd || 0),
+    checkoutAtFront: !!st.checkoutAtFront,
+    frontPolicy: st.frontPolicy === 'outFirst' ? 'outFirst' : 'fifo',
+    failProb: Math.min(100, Math.max(0, +st.failProb || 0)) / 100,
+    repair: Math.max(1, +st.repair || 10), repairSd: Math.max(0, +st.repairSd || 0),
+    patMin, patMax,
+    reps: Math.min(200, Math.max(5, Math.round(+st.reps) || 30)),
+    seed: Math.round(+st.seed) || 0
+  };
+}
+
+/* =====================================================================
+ * 五、结果解读 + "假如多1人/1房" 反事实推演
+ * =================================================================== */
+function computeWhatIfs(P, agg){
+  const out = [];
+  const m = k => agg[k].mean;
+  const pct = x => (x * 100).toFixed(0) + '%';
+  const f1 = x => x.toFixed(1);
+
+  // 等房高峰时刻
+  let peak = agg.series[0];
+  for(const s of agg.series) if(s.wq > peak.wq) peak = s;
+  if(peak.wq > 0.5)
+    out.push({lvl:'info', txt:`等房高峰约出现在 <b>${fmtTime(peak.t)}</b>，平均 ${f1(peak.wq)} 组同时等房，建议在该时段前完成保洁备房。`});
+
+  const lostRate = m('lost') / Math.max(1, m('arrived'));
+
+  // 前台瓶颈：利用率高，或全天利用率不高但高峰集中到达导致等待明显
+  if((m('utilF') > 0.8 && m('fdWait') > 3) || m('fdWait') > 5){
+    const P2 = clone(P); P2.staff.front++;
+    const a2 = runExperiments(P2);
+    out.push({lvl:'warn', txt:`<b>前台疑似瓶颈</b>：利用率 ${pct(m('utilF'))}，入住+退房平均等待 ${f1(m('fdWait'))} 分钟。`,
+      proj:`若前台 +1 人（→${P2.staff.front}人）：平均等待 ${f1(m('fdWait'))} → ${f1(a2.fdWait.mean)} 分钟。也可考虑自助办理或退房免排队。`});
+  }
+  // 保洁瓶颈
+  if(m('utilC') > 0.8 || m('clWait') > 8){
+    const P2 = clone(P); P2.staff.clean++;
+    const a2 = runExperiments(P2);
+    out.push({lvl:'warn', txt:`<b>保洁周转疑似瓶颈</b>：利用率 ${pct(m('utilC'))}，脏房平均等 ${f1(m('clWait'))} 分钟才有人打扫，直接拖长等房时间。`,
+      proj:`若保洁 +1 人（→${P2.staff.clean}人）：脏房等待 ${f1(m('clWait'))} → ${f1(a2.clWait.mean)} 分钟，等房者平均等待 ${f1(m('rmWait'))} → ${f1(a2.rmWait.mean)} 分钟。`});
+  }
+  // 包厢数量瓶颈：全天占用率过高，或保洁很快但等房/流失仍严重（说明高峰时段房间本身不够）
+  const worst = agg.occ.reduce((bi, o, i) => o.mean > agg.occ[bi].mean ? i : bi, 0);
+  const cleaningFast = m('clWait') < 8;
+  const roomsTight = agg.occ[worst].mean > 0.85
+    || (cleaningFast && m('rmWait') > 10)
+    || (cleaningFast && lostRate > 0.05 && m('rmWaited') > 1);
+  if(roomsTight && m('rmWait') > 5){
+    const P2 = clone(P); P2.types[worst].count++;
+    const a2 = runExperiments(P2);
+    out.push({lvl:'warn', txt:`<b>「${P.types[worst].name}」数量疑似不足</b>：占用率 ${pct(agg.occ[worst].mean)}${agg.occ[worst].mean > 0.85 ? ' 接近满负荷' : '（全天均值不高，但高峰时段已饱和）'}，等房者平均等 ${f1(m('rmWait'))} 分钟。`,
+      proj:`若「${P.types[worst].name}」+1 间（→${P2.types[worst].count}间）：等房率 ${pct(m('rmWaited')/Math.max(1,m('arrived')))} → ${pct(a2.rmWaited.mean/Math.max(1,a2.arrived.mean))}，流失 ${f1(m('lost'))} → ${f1(a2.lost.mean)} 组/天。`});
+  }
+  // 技师瓶颈
+  if(m('failures') > 0.5 && (m('tkWait') > 10 || P.staff.tech === 0)){
+    const P2 = clone(P); P2.staff.tech = Math.max(1, P.staff.tech + 1);
+    const a2 = runExperiments(P2);
+    const cur = P.staff.tech === 0
+      ? `当前<b>无技师</b>，每天约 ${f1(m('failures'))} 次故障全部积压无人处理`
+      : `每天约 ${f1(m('failures'))} 次故障，平均等 ${f1(m('tkWait'))} 分钟才有人修`;
+    const proj = P.staff.tech === 0
+      ? `若配 1 名技师：故障当天处理，平均响应等待约 ${f1(a2.tkWait.mean)} 分钟。`
+      : `若技师 ${P.staff.tech} → ${P2.staff.tech} 人：响应等待 ${f1(m('tkWait'))} → ${f1(a2.tkWait.mean)} 分钟。`;
+    out.push({lvl:'warn', txt:`<b>设备响应偏慢</b>：${cur}。`, proj});
+  }
+  // 流失
+  if(lostRate > 0.05)
+    out.push({lvl:'bad', txt:`<b>流失明显</b>：每天约流失 ${f1(m('lost'))} 组（${pct(lostRate)}），估算损失营收 <b>¥${Math.round(m('lostRev')).toLocaleString()}</b>/天。优先解决上面的瓶颈可挽回大部分流失。`});
+  if(!out.some(o => o.lvl === 'warn' || o.lvl === 'bad'))
+    out.push({lvl:'ok', txt:`当前配置下各环节运转顺畅：前台/保洁/技师利用率均在安全区，等房与流失可控。可尝试提高时段到店量做压力测试。`});
+  return out;
+}
+
+/* =====================================================================
+ * 六、UI（浏览器环境才初始化；纯逻辑部分可在 Node 中独立测试）
+ * =================================================================== */
+if(typeof module !== 'undefined' && typeof module.exports !== 'undefined'){
+  module.exports = {simulate, runExperiments, toSimParams, defaultState, computeWhatIfs, fmtTime};
+}
+
+if(typeof document !== 'undefined'){
+  let state = defaultState();
+  let lastAgg = null, prevAgg = null, lastP = null;
+  let runTimer = null;
+
+  const $ = s => document.querySelector(s);
+
+  /* ---- 参数表单渲染 ---- */
+  function renderTables(){
+    $('#tblPeriods').innerHTML = state.periods.map((r,i) => `
+      <tr>
+        <td><input type="time" value="${r.s}" data-t="periods" data-i="${i}" data-f="s"></td>
+        <td><input type="time" value="${r.e}" data-t="periods" data-i="${i}" data-f="e"></td>
+        <td><input type="number" min="0" value="${r.rate}" data-t="periods" data-i="${i}" data-f="rate" style="width:64px"></td>
+        <td><button class="iconbtn" data-del="periods" data-i="${i}" title="删除">✕</button></td>
+      </tr>`).join('');
+    $('#tblRooms').innerHTML = state.rooms.map((r,i) => `
+      <tr>
+        <td><input value="${r.name}" data-t="rooms" data-i="${i}" data-f="name" style="width:44px"></td>
+        <td><input type="number" min="0" value="${r.count}" data-t="rooms" data-i="${i}" data-f="count" style="width:44px"></td>
+        <td><input type="number" min="0" value="${r.share}" data-t="rooms" data-i="${i}" data-f="share" style="width:44px"></td>
+        <td><input type="number" min="10" value="${r.dur}" data-t="rooms" data-i="${i}" data-f="dur" style="width:48px">
+            <input type="number" min="0" value="${r.durSd}" data-t="rooms" data-i="${i}" data-f="durSd" style="width:40px;margin-top:2px"></td>
+        <td><input type="number" min="1" value="${r.clean}" data-t="rooms" data-i="${i}" data-f="clean" style="width:44px"></td>
+        <td><input type="number" min="0" value="${r.price}" data-t="rooms" data-i="${i}" data-f="price" style="width:56px"></td>
+        <td><button class="iconbtn" data-del="rooms" data-i="${i}" title="删除">✕</button></td>
+      </tr>`).join('');
+  }
+  function renderScalars(){
+    document.querySelectorAll('[data-bind]').forEach(el => {
+      const path = el.dataset.bind.split('.');
+      let v = state;
+      for(const k of path) v = v[k];
+      if(el.type === 'checkbox') el.checked = !!v;
+      else el.value = v;
+    });
+  }
+  function setPath(path, val){
+    const keys = path.split('.');
+    let o = state;
+    for(let i = 0; i < keys.length - 1; i++) o = o[keys[i]];
+    o[keys[keys.length - 1]] = val;
+  }
+
+  /* ---- 运行 ---- */
+  function scheduleRun(){
+    $('#status').textContent = '参数已修改，正在重新计算…';
+    clearTimeout(runTimer);
+    runTimer = setTimeout(run, 400);
+  }
+  function run(){
+    const P = toSimParams(state);
+    if(!P.types.length || !P.horizon){
+      $('#status').textContent = '⚠ 请检查参数：至少需要一个数量>0的房型和一段有效时段。';
+      return;
+    }
+    const t0 = performance.now();
+    const agg = runExperiments(P);
+    const whatifs = computeWhatIfs(P, agg);
+    const ms = Math.round(performance.now() - t0);
+    prevAgg = lastAgg; lastAgg = agg; lastP = P;
+    $('#status').textContent =
+      `✅ 已完成 ${P.reps} 次重复模拟（≈${P.reps}个营业日），用时 ${ms}ms。修改任意参数将自动重算。`;
+    renderCards(agg, prevAgg);
+    renderCharts(agg, P);
+    renderInterp(whatifs);
+  }
+
+  /* ---- 渲染：KPI 卡片 ---- */
+  const f1 = x => x.toFixed(1);
+  const pct = x => (x*100).toFixed(0) + '%';
+  function delta(cur, prev, lowerBetter, unit){
+    if(prev == null) return '';
+    const d = cur - prev;
+    if(Math.abs(d) < 0.05) return '<span class="dl">— 与上次持平</span>';
+    const good = lowerBetter ? d < 0 : d > 0;
+    return `<span class="${good ? 'dg' : 'db'}">${d > 0 ? '▲' : '▼'} ${Math.abs(d).toFixed(1)}${unit} vs 上次</span>`;
+  }
+  function renderCards(a, prev){
+    const m = k => a[k].mean;
+    const pv = k => prev ? prev[k].mean : null;
+    const lostRate = m('lost') / Math.max(1, m('arrived'));
+    const waitRate = m('rmWaited') / Math.max(1, m('arrived'));
+    const occTxt = lastP.types.map((t,i) => `${t.name} ${pct(a.occ[i].mean)}`).join(' · ');
+    $('#cards').innerHTML = `
+      <div class="card"><div class="t">到店 / 完成 / 流失（组/天）</div>
+        <div class="v">${f1(m('arrived'))} / ${f1(m('served'))} / <span style="color:${lostRate>0.05?'var(--bad)':'var(--ok)'}">${f1(m('lost'))}</span></div>
+        <div class="s">流失率 ${pct(lostRate)} ${delta(m('lost'), pv('lost'), true, '组')}</div></div>
+      <div class="card"><div class="t">流失营收估算</div>
+        <div class="v">¥${Math.round(m('lostRev')).toLocaleString()}<span style="font-size:12px;color:var(--mut)">/天</span></div>
+        <div class="s">${delta(m('lostRev'), pv('lostRev'), true, '元')}</div></div>
+      <div class="card"><div class="t">前台平均等待</div>
+        <div class="v">${f1(m('fdWait'))}<span style="font-size:12px;color:var(--mut)"> 分钟</span></div>
+        <div class="s">最长 ${f1(m('fdWaitMax'))} 分 · 峰值排队 ${f1(m('maxFq'))} 人<br>${delta(m('fdWait'), pv('fdWait'), true, '分')}</div></div>
+      <div class="card"><div class="t">等房者平均等待</div>
+        <div class="v">${f1(m('rmWait'))}<span style="font-size:12px;color:var(--mut)"> 分钟</span></div>
+        <div class="s">等房率 ${pct(waitRate)} · 最长 ${f1(m('rmWaitMax'))} 分<br>${delta(m('rmWait'), pv('rmWait'), true, '分')}</div></div>
+      <div class="card"><div class="t">脏房等保洁</div>
+        <div class="v">${f1(m('clWait'))}<span style="font-size:12px;color:var(--mut)"> 分钟</span></div>
+        <div class="s">最长 ${f1(m('clWaitMax'))} 分 · 待扫峰值 ${f1(m('maxCq'))} 间<br>${delta(m('clWait'), pv('clWait'), true, '分')}</div></div>
+      <div class="card"><div class="t">设备故障响应</div>
+        <div class="v">${m('failures') > 0.1 && m('tkWait') > 0 ? f1(m('tkWait')) : '—'}<span style="font-size:12px;color:var(--mut)"> 分钟</span></div>
+        <div class="s">故障 ${f1(m('failures'))} 次/天 · 修复 ${f1(m('repaired'))} 次</div></div>
+      <div class="card"><div class="t">人员利用率</div>
+        <div class="v" style="font-size:15px">前台 ${pct(m('utilF'))} · 保洁 ${pct(m('utilC'))} · 技师 ${pct(m('utilT'))}</div>
+        <div class="s">利用率 &gt;85% 视为高负荷</div></div>
+      <div class="card"><div class="t">包厢占用率</div>
+        <div class="v" style="font-size:15px">${occTxt}</div>
+        <div class="s">占用率 &gt;90% 说明该房型可能不足</div></div>`;
+  }
+
+  /* ---- 渲染：图表 ---- */
+  function setupCanvas(cv){
+    const dpr = window.devicePixelRatio || 1;
+    const W = cv.clientWidth, H = cv.clientHeight || +cv.getAttribute('height');
+    cv.width = W * dpr; cv.height = H * dpr;
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    return {ctx, W, H};
+  }
+  function renderCharts(a, P){
+    // 排队曲线
+    {
+      const {ctx, W, H} = setupCanvas($('#cvQueue'));
+      const ml = 34, mr = 10, mt = 6, mb = 24;
+      const series = [
+        {name:'前台排队', key:'fq', color:'#5aa2ff'},
+        {name:'等房',     key:'wq', color:'#ffb020'},
+        {name:'待保洁',   key:'cq', color:'#43d39e'},
+        {name:'待维修',   key:'tq', color:'#ff6b6b'}
+      ];
+      const data = a.series, n = data.length;
+      const ymax = Math.max(2, ...series.map(s => Math.max(...data.map(d => d[s.key])))) * 1.15;
+      const X = i => ml + (W - ml - mr) * i / (n - 1);
+      const Y = v => H - mb - (H - mt - mb) * v / ymax;
+      ctx.strokeStyle = '#2a3552'; ctx.fillStyle = '#8b96b0'; ctx.font = '10px sans-serif';
+      for(let g = 0; g <= 4; g++){
+        const v = ymax * g / 4, y = Y(v);
+        ctx.beginPath(); ctx.moveTo(ml, y); ctx.lineTo(W - mr, y); ctx.stroke();
+        ctx.fillText(v.toFixed(0), 6, y + 3);
+      }
+      const step = Math.max(1, Math.round(n / 8));
+      for(let i = 0; i < n; i += step){
+        ctx.fillText(fmtTime(data[i].t), X(i) - 14, H - 8);
+      }
+      for(const s of series){
+        ctx.strokeStyle = s.color; ctx.lineWidth = 1.8; ctx.beginPath();
+        data.forEach((d, i) => { const x = X(i), y = Y(d[s.key]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+        ctx.stroke();
+      }
+      $('#lgQueue').innerHTML = series.map(s =>
+        `<span style="color:${s.color}">━</span> ${s.name}`).join('　');
+    }
+    // 利用率条形
+    {
+      const {ctx, W, H} = setupCanvas($('#cvUtil'));
+      const bars = [
+        {name:'前台', v:a.utilF.mean, c:'#5aa2ff'},
+        {name:'保洁', v:a.utilC.mean, c:'#43d39e'},
+        {name:'技师', v:a.utilT.mean, c:'#ff6b6b'},
+        ...P.types.map((t,i) => ({name:t.name + '占用', v:a.occ[i].mean, c:'#ffb020'}))
+      ];
+      const ml = 70, mr = 44, mt = 10, mb = 6;
+      const bh = (H - mt - mb) / bars.length;
+      const X = v => ml + (W - ml - mr) * Math.min(v, 1.15) / 1.15;
+      // 85% 警戒线
+      ctx.strokeStyle = '#ff6b6b'; ctx.setLineDash([4,4]);
+      ctx.beginPath(); ctx.moveTo(X(0.85), mt); ctx.lineTo(X(0.85), H - mb); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#8b96b0'; ctx.font = '10px sans-serif';
+      ctx.fillText('85%', X(0.85) - 10, mt + 8);
+      bars.forEach((b, i) => {
+        const y = mt + i * bh + bh * 0.2, h = bh * 0.6;
+        ctx.fillStyle = '#8b96b0'; ctx.font = '11px sans-serif';
+        ctx.fillText(b.name, 8, y + h / 2 + 4);
+        ctx.fillStyle = b.c;
+        ctx.fillRect(ml, y, Math.max(1, X(b.v) - ml), h);
+        ctx.fillStyle = b.v > 0.85 ? '#ff6b6b' : '#e8ecf5';
+        ctx.fillText((b.v * 100).toFixed(0) + '%', X(b.v) + 5, y + h / 2 + 4);
+      });
+    }
+  }
+
+  /* ---- 渲染：解读 ---- */
+  function renderInterp(list){
+    $('#interp').innerHTML = list.map(o =>
+      `<li class="${o.lvl}">${o.txt}${o.proj ? `<span class="proj">💡 ${o.proj}</span>` : ''}</li>`).join('');
+  }
+
+  /* ---- 事件绑定 ---- */
+  document.querySelectorAll('[data-bind]').forEach(el => {
+    el.addEventListener('input', () => {
+      const v = el.type === 'checkbox' ? el.checked
+        : (el.tagName === 'SELECT' ? el.value : +el.value);
+      setPath(el.dataset.bind, v);
+      scheduleRun();
+    });
+  });
+  document.querySelectorAll('#tblPeriods,#tblRooms').forEach(tb => {
+    tb.addEventListener('input', e => {
+      const el = e.target;
+      if(!el.dataset.t) return;
+      const arr = state[el.dataset.t], i = +el.dataset.i, f = el.dataset.f;
+      arr[i][f] = el.type === 'number' ? +el.value : el.value;
+      scheduleRun();
+    });
+    tb.addEventListener('click', e => {
+      const btn = e.target.closest('[data-del]');
+      if(!btn) return;
+      state[btn.dataset.del].splice(+btn.dataset.i, 1);
+      renderTables(); scheduleRun();
+    });
+  });
+  $('#btnAddPeriod').onclick = () => { state.periods.push({s:'12:00', e:'17:00', rate:5}); renderTables(); scheduleRun(); };
+  $('#btnAddRoom').onclick   = () => { state.rooms.push({name:'新房', count:2, share:10, dur:120, durSd:20, clean:15, price:199}); renderTables(); scheduleRun(); };
+  $('#btnSeed').onclick = () => { state.seed = Math.floor(Math.random() * 1e6); renderScalars(); run(); };
+  $('#btnReset').onclick = () => { state = defaultState(); renderTables(); renderScalars(); run(); };
+  $('#btnRun').onclick = run;
+
+  renderTables(); renderScalars(); run();
+}
+</script>
+</body>
+</html>
